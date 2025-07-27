@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
-import { SafeAreaView, StyleSheet, Text, View, Modal, Pressable } from 'react-native';
+import { SafeAreaView, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
 import { MarkedDates } from 'react-native-calendars/src/types';
-import { useAppContext } from '../context/AppContext';
-
-type CustomMarking = MarkedDates[string];
+import { useAppContext, Shift } from '../context/AppContext';
 
 LocaleConfig.locales.es = {
   monthNames: ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'],
@@ -15,113 +13,126 @@ LocaleConfig.locales.es = {
 };
 LocaleConfig.defaultLocale = 'es';
 
-const Legend = () => {
-  const { shifts } = useAppContext();
-  return (
-    <View style={styles.legendContainer}>
-      {Object.values(shifts).map(shift => (
-        <View key={shift.key} style={styles.legendItem}>
-          <View style={[styles.legendColorBox, {backgroundColor: shift.color}]} />
-          <Text style={styles.legendText}>{shift.name}</Text>
+// --- NEW SELECTION BAR COMPONENT ---
+const SelectionBar = ({ shift, onApply, onCancel }: { shift: Shift, onApply: () => void, onCancel: () => void }) => (
+    <View style={[styles.selectionBar, { backgroundColor: shift.color }]}>
+        <Text style={styles.selectionText}>Asignando: {shift.name}</Text>
+        <View style={styles.selectionButtons}>
+            <TouchableOpacity style={styles.actionButton} onPress={onCancel}>
+                <Text style={styles.actionButtonText}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.actionButton, styles.applyButton]} onPress={onApply}>
+                <Text style={styles.actionButtonText}>Aplicar</Text>
+            </TouchableOpacity>
         </View>
-      ))}
     </View>
-  );
-};
+);
 
 const CalendarScreen = () => {
   const { shifts, markedDates, setMarkedDates } = useAppContext();
-  const [isModalVisible, setModalVisible] = useState(false);
-  const [selectedDate, setSelectedDate] = useState('');
+  
+  // State for the new multi-select mode
+  const [selectionModeShift, setSelectionModeShift] = useState<Shift | null>(null);
+  const [selectedDays, setSelectedDays] = useState<string[]>([]);
 
   const handleDayPress = (day: { dateString: string }) => {
-    setSelectedDate(day.dateString);
-    setModalVisible(true);
-  };
+    if (!selectionModeShift) return; // Do nothing if not in selection mode
 
-  const assignShift = (shiftKey: keyof typeof shifts) => {
-    const newMarkedDates = { ...markedDates };
-    const createMarking = (key: keyof typeof shifts): CustomMarking => ({
-      customStyles: {
-        container: { backgroundColor: shifts[key].color, borderRadius: 8 },
-        text: { color: 'white', fontWeight: 'bold' },
-      },
+    const { dateString } = day;
+    setSelectedDays(currentSelectedDays => {
+      if (currentSelectedDays.includes(dateString)) {
+        return currentSelectedDays.filter(d => d !== dateString); // Deselect
+      } else {
+        return [...currentSelectedDays, dateString]; // Select
+      }
     });
-    newMarkedDates[selectedDate] = createMarking(shiftKey);
-    setMarkedDates(newMarkedDates);
-    setModalVisible(false);
   };
 
-  const clearShift = () => {
-    const newMarkedDates = { ...markedDates };
-    delete newMarkedDates[selectedDate];
-    setMarkedDates(newMarkedDates);
-    setModalVisible(false);
-  }
+  const handleApplySelection = () => {
+    if (!selectionModeShift) return;
+
+    const newMarkings: MarkedDates = {};
+    selectedDays.forEach(day => {
+        newMarkings[day] = {
+            customStyles: {
+                container: { backgroundColor: selectionModeShift.color, borderRadius: 8 },
+                text: { color: 'white', fontWeight: 'bold' },
+            },
+        };
+    });
+
+    setMarkedDates(currentMarked => ({ ...currentMarked, ...newMarkings }));
+    handleCancelSelection(); // Reset after applying
+  };
+
+  const handleCancelSelection = () => {
+    setSelectionModeShift(null);
+    setSelectedDays([]);
+  };
+
+  // Combine existing markings with temporary selections for display
+  const displayedMarkings = { ...markedDates };
+  selectedDays.forEach(day => {
+    displayedMarkings[day] = {
+        customStyles: {
+            container: { backgroundColor: selectionModeShift?.color, borderRadius: 8, opacity: 0.7 },
+            text: { color: 'white' },
+        },
+    };
+  });
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Mi Calendario</Text>
+        <Text style={styles.subtitle}>Toca un turno abajo para empezar a seleccionar días</Text>
       </View>
       <Calendar
         style={styles.calendar}
         onDayPress={handleDayPress}
         markingType={'custom'}
-        markedDates={markedDates}
+        markedDates={displayedMarkings}
       />
-      <Legend />
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={isModalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.centeredView}>
-          <View style={styles.modalView}>
-            <Text style={styles.modalTitle}>Asignar Turno</Text>
-            <Text style={styles.modalDate}>{selectedDate}</Text>
-            {Object.values(shifts).map(shift => (
-              <Pressable
-                key={shift.key}
-                style={[styles.button, { backgroundColor: shift.color }]}
-                onPress={() => assignShift(shift.key as keyof typeof shifts)}
-              >
-                <Text style={styles.buttonText}>{shift.name}</Text>
-              </Pressable>
-            ))}
-            <Pressable style={[styles.button, styles.buttonClear]} onPress={clearShift}>
-              <Text style={styles.buttonClearText}>Quitar Turno</Text>
-            </Pressable>
-            <Pressable style={[styles.button, styles.buttonClose]} onPress={() => setModalVisible(false)}>
-              <Text style={styles.buttonText}>Cerrar</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+      
+      {/* --- LEGEND (Now interactive) --- */}
+      <View style={styles.legendContainer}>
+        {Object.values(shifts).map(shift => (
+          <TouchableOpacity key={shift.key} style={styles.legendItem} onPress={() => setSelectionModeShift(shift)}>
+            <View style={[styles.legendColorBox, {backgroundColor: shift.color}]} />
+            <Text style={styles.legendText}>{shift.name}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* --- Show selection bar only when in selection mode --- */}
+      {selectionModeShift && (
+        <SelectionBar 
+            shift={selectionModeShift} 
+            onApply={handleApplySelection} 
+            onCancel={handleCancelSelection} 
+        />
+      )}
     </SafeAreaView>
   );
 };
 
-// Add all the styles here
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#E8F0F2' },
     header: { padding: 20, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#ddd' },
     title: { fontSize: 24, fontWeight: 'bold', textAlign: 'center' },
+    subtitle: { textAlign: 'center', color: '#666', marginTop: 4 },
     calendar: { margin: 10, borderRadius: 10, elevation: 4 },
-    legendContainer: { padding: 15, marginHorizontal: 10, backgroundColor: 'white', borderRadius: 10, elevation: 4 },
-    legendItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+    legendContainer: { padding: 15, margin: 10, backgroundColor: 'white', borderRadius: 10, elevation: 4 },
+    legendItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
     legendColorBox: { width: 20, height: 20, borderRadius: 4, marginRight: 10 },
     legendText: { fontSize: 16, color: '#333' },
-    centeredView: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
-    modalView: { margin: 20, backgroundColor: 'white', borderRadius: 20, padding: 35, alignItems: 'center', width: '90%', elevation: 5 },
-    modalTitle: { fontSize: 24, fontWeight: 'bold', marginBottom: 10 },
-    modalDate: { fontSize: 18, color: '#666', marginBottom: 20 },
-    button: { borderRadius: 10, padding: 12, elevation: 2, marginBottom: 10, width: '100%' },
-    buttonText: { color: 'white', fontWeight: 'bold', textAlign: 'center', fontSize: 16 },
-    buttonClose: { backgroundColor: '#aaa' },
-    buttonClear: { backgroundColor: '#f0f0f0', borderWidth: 1, borderColor: '#ccc' },
-    buttonClearText: { color: '#333', fontWeight: 'bold', textAlign: 'center', fontSize: 16 },
+    // New Styles
+    selectionBar: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', elevation: 10 },
+    selectionText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
+    selectionButtons: { flexDirection: 'row' },
+    actionButton: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20, marginLeft: 10 },
+    applyButton: { backgroundColor: 'rgba(255,255,255,0.3)' },
+    actionButtonText: { color: 'white', fontWeight: 'bold' },
 });
 
 export default CalendarScreen;
