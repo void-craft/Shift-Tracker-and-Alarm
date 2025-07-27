@@ -1,5 +1,5 @@
 import React, { useState, useContext, createContext } from 'react';
-import { SafeAreaView, StyleSheet, Text, View, Modal, Pressable, FlatList, TouchableOpacity } from 'react-native';
+import { SafeAreaView, StyleSheet, Text, View, Modal, Pressable, FlatList, TouchableOpacity, TextInput, Switch } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
@@ -7,8 +7,8 @@ import { MarkedDates } from 'react-native-calendars/src/types';
 
 // --- TYPE DEFINITIONS ---
 type CustomMarking = MarkedDates[string];
-type Alarm = { id: string; label: string; time: string };
-type Shift = { key: string; color: string; name: string; alarms: Alarm[] };
+type Alarm = { id: string; label: string; time: string; enabled: boolean }; // Added 'enabled'
+type Shift = { key: string; color: string; name:string; alarms: Alarm[] };
 
 // --- LOCALE CONFIG ---
 LocaleConfig.locales.es = {
@@ -20,16 +20,16 @@ LocaleConfig.locales.es = {
 };
 LocaleConfig.defaultLocale = 'es';
 
-// --- INITIAL DATA (Was SHIFTS constant) ---
+// --- INITIAL DATA (Alarms now have an 'enabled' property) ---
 const INITIAL_SHIFTS: Record<string, Shift> = {
   early: { 
     key: 'early', 
     color: '#FF9A3C', 
     name: 'Turno Mañana',
     alarms: [
-      { id: '1', label: 'Despertar', time: '05:30' },
-      { id: '2', label: 'Salir de casa', time: '06:15' },
-      { id: '3', label: 'Entrar a trabajar', time: '07:00' },
+      { id: '1', label: 'Despertar', time: '05:30', enabled: true },
+      { id: '2', label: 'Salir de casa', time: '06:15', enabled: true },
+      { id: '3', label: 'Entrar a trabajar', time: '07:00', enabled: false },
     ]
   },
   late: { 
@@ -37,25 +37,21 @@ const INITIAL_SHIFTS: Record<string, Shift> = {
     color: '#4A90E2', 
     name: 'Turno Tarde',
     alarms: [
-      { id: '4', label: 'Comer', time: '13:00' },
-      { id: '5', label: 'Salir de casa', time: '14:15' },
-      { id: '6', label: 'Entrar a trabajar', time: '15:00' },
+      { id: '4', label: 'Comer', time: '13:00', enabled: true },
+      { id: '5', label: 'Salir de casa', time: '14:15', enabled: true },
     ]
   },
   night: { 
     key: 'night', 
     color: '#8A2BE2', 
     name: 'Turno Noche',
-    alarms: [
-      { id: '7', label: 'Cenar', time: '21:00' },
-      { id: '8', label: 'Entrar a trabajar', time: '23:00' },
-    ]
+    alarms: []
   },
   weekOff: { key: 'weekOff', color: '#2ECC71', name: 'Día Libre', alarms: [] },
   leave: { key: 'leave', color: '#E74C3C', name: 'Vacaciones', alarms: [] },
 };
 
-// --- APP CONTEXT (To share state between screens) ---
+// --- APP CONTEXT ---
 const AppContext = createContext<{
   shifts: Record<string, Shift>;
   setShifts: React.Dispatch<React.SetStateAction<Record<string, Shift>>>;
@@ -73,7 +69,7 @@ const useAppContext = () => {
 
 // --- LEGEND COMPONENT ---
 const Legend = () => {
-  const { shifts } = useAppContext(); // Use context
+  const { shifts } = useAppContext();
   return (
     <View style={styles.legendContainer}>
       {Object.values(shifts).map(shift => (
@@ -88,7 +84,7 @@ const Legend = () => {
 
 // --- SCREEN COMPONENTS ---
 const CalendarScreen = () => {
-  const { shifts, markedDates, setMarkedDates } = useAppContext(); // Use context
+  const { shifts, markedDates, setMarkedDates } = useAppContext();
   const [isModalVisible, setModalVisible] = useState(false);
   const [selectedDate, setSelectedDate] = useState('');
 
@@ -162,27 +158,71 @@ const CalendarScreen = () => {
 };
 
 const ShiftsScreen = () => {
-    const { shifts, setShifts } = useAppContext(); // Use context
+    const { shifts, setShifts } = useAppContext();
 
-    const addAlarmToEarlyShift = () => {
+    const updateAlarm = (shiftKey: string, alarmId: string, updatedAlarm: Partial<Alarm>) => {
         setShifts(currentShifts => {
             const newShifts = { ...currentShifts };
-            const earlyShift = { ...newShifts.early };
-            const newAlarm = {
-                id: `alarm-${Date.now()}`, // Unique ID
-                label: 'Nueva Alarma',
-                time: '12:00'
-            };
-            earlyShift.alarms = [...earlyShift.alarms, newAlarm];
-            newShifts.early = earlyShift;
+            const shiftToUpdate = { ...newShifts[shiftKey] };
+            shiftToUpdate.alarms = shiftToUpdate.alarms.map(alarm => 
+                alarm.id === alarmId ? { ...alarm, ...updatedAlarm } : alarm
+            );
+            newShifts[shiftKey] = shiftToUpdate;
             return newShifts;
         });
     };
 
-    const renderAlarm = ({ item }: { item: Alarm }) => (
+    const addAlarm = (shiftKey: string) => {
+        setShifts(currentShifts => {
+            const newShifts = { ...currentShifts };
+            const shiftToUpdate = { ...newShifts[shiftKey] };
+            const newAlarm: Alarm = {
+                id: `alarm-${Date.now()}`,
+                label: 'Nueva Alarma',
+                time: '12:00',
+                enabled: true,
+            };
+            shiftToUpdate.alarms = [...shiftToUpdate.alarms, newAlarm];
+            newShifts[shiftKey] = shiftToUpdate;
+            return newShifts;
+        });
+    };
+
+    const deleteAlarm = (shiftKey: string, alarmId: string) => {
+        setShifts(currentShifts => {
+            const newShifts = { ...currentShifts };
+            const shiftToUpdate = { ...newShifts[shiftKey] };
+            shiftToUpdate.alarms = shiftToUpdate.alarms.filter(alarm => alarm.id !== alarmId);
+            newShifts[shiftKey] = shiftToUpdate;
+            return newShifts;
+        });
+    };
+
+    const renderAlarm = ({ item, shiftKey }: { item: Alarm, shiftKey: string }) => (
         <View style={styles.alarmItem}>
-            <Text style={styles.alarmLabel}>{item.label}</Text>
-            <Text style={styles.alarmTime}>{item.time}</Text>
+            <View>
+                <TextInput 
+                    style={styles.alarmLabel}
+                    value={item.label}
+                    onChangeText={(text) => updateAlarm(shiftKey, item.id, { label: text })}
+                />
+                <TextInput 
+                    style={styles.alarmTime}
+                    value={item.time}
+                    onChangeText={(text) => updateAlarm(shiftKey, item.id, { time: text })}
+                />
+            </View>
+            <View style={styles.alarmControls}>
+                <Switch
+                    trackColor={{ false: "#767577", true: "#81b0ff" }}
+                    thumbColor={item.enabled ? "#f5dd4b" : "#f4f3f4"}
+                    onValueChange={(newValue) => updateAlarm(shiftKey, item.id, { enabled: newValue })}
+                    value={item.enabled}
+                />
+                <TouchableOpacity onPress={() => deleteAlarm(shiftKey, item.id)} style={styles.deleteButton}>
+                    <Text style={styles.deleteButtonText}>✕</Text>
+                </TouchableOpacity>
+            </View>
         </View>
     );
 
@@ -194,13 +234,12 @@ const ShiftsScreen = () => {
             <View style={styles.alarmList}>
                 <FlatList
                     data={item.alarms}
-                    renderItem={renderAlarm}
+                    renderItem={({ item: alarmItem }) => renderAlarm({ item: alarmItem, shiftKey: item.key })}
                     keyExtractor={(alarm) => alarm.id}
                     ListEmptyComponent={<Text style={styles.noAlarmsText}>No hay alarmas para este turno.</Text>}
                 />
-                {/* This is a temporary button for testing */}
-                <TouchableOpacity style={styles.addAlarmButton} onPress={addAlarmToEarlyShift}>
-                    <Text style={styles.addAlarmButtonText}>+ Añadir Alarma a Turno Mañana</Text>
+                <TouchableOpacity style={styles.addAlarmButton} onPress={() => addAlarm(item.key)}>
+                    <Text style={styles.addAlarmButtonText}>+ Añadir Alarma</Text>
                 </TouchableOpacity>
             </View>
         </View>
@@ -247,8 +286,6 @@ const styles = StyleSheet.create({
     header: { padding: 20, paddingBottom: 10, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#ddd' },
     title: { fontSize: 28, fontWeight: 'bold', color: '#333', textAlign: 'center' },
     calendar: { margin: 10, borderRadius: 10, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 6 },
-    content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-    placeholderText: { fontSize: 18, textAlign: 'center', color: '#666' },
     legendContainer: { padding: 15, margin: 10, backgroundColor: 'white', borderRadius: 10, elevation: 4 },
     legendItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
     legendColorBox: { width: 20, height: 20, borderRadius: 4, marginRight: 10 },
@@ -267,12 +304,15 @@ const styles = StyleSheet.create({
     shiftCardHeader: { borderTopLeftRadius: 10, borderTopRightRadius: 10, padding: 15 },
     shiftCardTitle: { fontSize: 20, fontWeight: 'bold', color: 'white' },
     alarmList: { paddingHorizontal: 15, paddingBottom: 15 },
-    alarmItem: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee' },
-    alarmLabel: { fontSize: 16 },
-    alarmTime: { fontSize: 16, color: '#333', fontWeight: '500' },
+    alarmItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#eee' },
+    alarmLabel: { fontSize: 18, color: '#000' },
+    alarmTime: { fontSize: 14, color: '#666' },
+    alarmControls: { flexDirection: 'row', alignItems: 'center' },
+    deleteButton: { marginLeft: 15, padding: 5 },
+    deleteButtonText: { fontSize: 20, color: 'red', fontWeight: 'bold' },
     noAlarmsText: { textAlign: 'center', color: '#999', padding: 10 },
-    addAlarmButton: { backgroundColor: '#E8F0F2', borderRadius: 8, padding: 10, marginTop: 10, alignItems: 'center' },
-    addAlarmButtonText: { color: '#4A90E2', fontWeight: 'bold' },
+    addAlarmButton: { backgroundColor: '#E8F0F2', borderRadius: 8, padding: 12, marginTop: 15, alignItems: 'center' },
+    addAlarmButtonText: { color: '#4A90E2', fontWeight: 'bold', fontSize: 16 },
 });
 
 export default App;
