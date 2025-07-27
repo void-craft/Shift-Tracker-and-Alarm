@@ -25,7 +25,7 @@ interface AppContextType {
   addShift: (name: string) => void;
   deleteShift: (shiftKey: string) => void;
   updateAlarm: (shiftKey: string, alarmId: string, updatedAlarm: Partial<Alarm>) => void;
-  addAlarm: (shiftKey: string) => void;
+  addAlarm: (shiftKey: string, label: string, time: string) => void; // <-- UPDATED
   deleteAlarm: (shiftKey: string, alarmId: string) => void;
   markedDates: MarkedDates;
   setMarkedDates: React.Dispatch<React.SetStateAction<MarkedDates>>;
@@ -43,7 +43,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const newShift: Shift = {
       key: newShiftKey,
       name: name,
-      color: `#${Math.floor(Math.random()*16777215).toString(16)}`, // Random color
+      color: `#${Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')}`, // Random color
       alarms: [],
     };
     setShifts(currentShifts => ({ ...currentShifts, [newShiftKey]: newShift }));
@@ -69,12 +69,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     });
   };
 
-  const addAlarm = (shiftKey: string) => {
+  // --- THIS FUNCTION IS NOW FIXED ---
+  const addAlarm = (shiftKey: string, label: string, time: string) => {
       setShifts(currentShifts => {
           const newShifts = { ...currentShifts };
           const shiftToUpdate = { ...newShifts[shiftKey] };
           const newAlarm: Alarm = {
-              id: `alarm-${Date.now()}`, label: 'Nueva Alarma', time: '12:00', enabled: true,
+              id: `alarm-${Date.now()}`,
+              label: label, // Use passed label
+              time: time,   // Use passed time
+              enabled: true,
           };
           shiftToUpdate.alarms = [...shiftToUpdate.alarms, newAlarm];
           newShifts[shiftKey] = shiftToUpdate;
