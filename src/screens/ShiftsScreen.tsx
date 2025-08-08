@@ -1,27 +1,27 @@
-import React, { useState } from 'react'; // 'useEffect' is removed
+// src/screens/ShiftsScreen.tsx
+import React, { useState } from 'react';
 import { SafeAreaView, StyleSheet, Text, View, FlatList, TouchableOpacity, TextInput, Switch, Alert, Modal, Pressable } from 'react-native';
 import { useAppContext, Shift, Alarm } from '../context/AppContext';
-// @ts-ignore - This suppresses the TypeScript error for the library not having type declarations
+import AlarmModal from '../components/AlarmModal'; // Import the new component
+// @ts-ignore
 import Picker from 'react-native-wheel-scroll-picker';
 
-// --- TIME PICKER DATA ---
-const hours = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
+// --- TIME PICKER DATA (Removed from here, as it's now in AlarmModal) ---
+const hours = Array.from({ length: 12 }, (_, i) => String(i === 0 ? 12 : i).padStart(2, '0'));
 const minutes = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
 const ampm = ['AM', 'PM'];
 
 const ShiftsScreen = () => {
-    // The unused 'delAlarm' rename is removed. We now use 'deleteAlarm' directly.
     const { shifts, addShift, deleteShift, updateAlarm, addAlarm, deleteAlarm } = useAppContext();
-    
+
     const [isEditMode, setIsEditMode] = useState(false);
     const [isAddShiftModalVisible, setAddShiftModalVisible] = useState(false);
     const [newShiftName, setNewShiftName] = useState('');
+    
+    // --- REPLACED: Alarm modal state is now simpler ---
     const [isAlarmModalVisible, setAlarmModalVisible] = useState(false);
-    const [currentAlarm, setCurrentAlarm] = useState<{alarm: Partial<Alarm>, shiftKey: string} | null>(null);
-
-    const [selectedHour, setSelectedHour] = useState(6);
-    const [selectedMinute, setSelectedMinute] = useState(29);
-    const [selectedAmPm, setSelectedAmPm] = useState(0);
+    const [currentShiftKey, setCurrentShiftKey] = useState<string | null>(null);
+    const [currentAlarm, setCurrentAlarm] = useState<Alarm | undefined>(undefined);
 
     const handleAddShift = () => {
         if (newShiftName.trim()) {
@@ -37,52 +37,40 @@ const ShiftsScreen = () => {
         );
     };
 
-    const openAlarmModal = (shiftKey: string, alarm?: Alarm) => {
-        if (alarm && alarm.time) {
-            const [time, period] = alarm.time.split(' ');
-            const [hour, minute] = time.split(':');
-            // Adjust for array index (e.g., '01' is at index 0)
-            const hourIndex = parseInt(hour, 10) - 1;
-            setSelectedHour(hourIndex >= 0 ? hourIndex : 11); // Handle potential errors
-            setSelectedMinute(parseInt(minute, 10));
-            setSelectedAmPm(period === 'PM' ? 1 : 0);
-        } else {
-            setSelectedHour(6); // Default to '07'
-            setSelectedMinute(29); // Default to '30'
-            setSelectedAmPm(0); // Default to 'AM'
-        }
-        setCurrentAlarm({ alarm: alarm || {}, shiftKey });
+    // --- REPLACED: openAlarmModal now just sets state to open the modal ---
+    const handleOpenAlarmModal = (shiftKey: string, alarm?: Alarm) => {
+        setCurrentShiftKey(shiftKey);
+        setCurrentAlarm(alarm);
         setAlarmModalVisible(true);
     };
 
-    const handleSaveAlarm = () => {
-        if (!currentAlarm) return;
-
-        const { alarm, shiftKey } = currentAlarm;
-        const finalLabel = alarm.label?.trim() || 'Nueva Alarma';
-        const finalTime = `${hours[selectedHour]}:${minutes[selectedMinute]} ${ampm[selectedAmPm]}`;
-
-        if (alarm.id) {
-            updateAlarm(shiftKey, alarm.id, { label: finalLabel, time: finalTime });
+    // --- REPLACED: Save logic is simplified and passed to AlarmModal ---
+    const handleSaveAlarm = (label: string, time: string, isEditing: boolean) => {
+        if (!currentShiftKey) return;
+        if (isEditing && currentAlarm?.id) {
+            updateAlarm(currentShiftKey, currentAlarm.id, { label: label, time: time });
         } else {
-            addAlarm(shiftKey, finalLabel, finalTime);
+            addAlarm(currentShiftKey, label, time);
         }
         setAlarmModalVisible(false);
-        setCurrentAlarm(null);
+        setCurrentAlarm(undefined);
+        setCurrentShiftKey(null);
     };
 
+    // --- REPLACED: Delete logic is simplified and passed to AlarmModal ---
     const handleDeleteAlarm = () => {
-        if (currentAlarm && currentAlarm.alarm.id) {
-            deleteAlarm(currentAlarm.shiftKey, currentAlarm.alarm.id);
-            setAlarmModalVisible(false);
-            setCurrentAlarm(null);
-        }
+      if (currentShiftKey && currentAlarm?.id) {
+          deleteAlarm(currentShiftKey, currentAlarm.id);
+      }
+      setAlarmModalVisible(false);
+      setCurrentAlarm(undefined);
+      setCurrentShiftKey(null);
     };
 
     const renderAlarm = ({ item, shiftKey }: { item: Alarm, shiftKey: string }) => (
-        <TouchableOpacity 
-            style={styles.alarmItem} 
-            onPress={() => isEditMode && openAlarmModal(shiftKey, item)}
+        <TouchableOpacity
+            style={styles.alarmItem}
+            onPress={() => isEditMode && handleOpenAlarmModal(shiftKey, item)}
             disabled={!isEditMode}
         >
             <View>
@@ -114,7 +102,7 @@ const ShiftsScreen = () => {
                     ListEmptyComponent={<Text style={styles.noAlarmsText}>No hay alarmas para este turno.</Text>}
                 />
                 {isEditMode && (
-                    <TouchableOpacity style={styles.addAlarmButton} onPress={() => openAlarmModal(item.key)}>
+                    <TouchableOpacity style={styles.addAlarmButton} onPress={() => handleOpenAlarmModal(item.key)}>
                         <Text style={styles.addAlarmButtonText}>+ Añadir Alarma</Text>
                     </TouchableOpacity>
                 )}
@@ -130,7 +118,6 @@ const ShiftsScreen = () => {
                     <Text style={styles.editButtonText}>{isEditMode ? 'Hecho' : 'Editar'}</Text>
                 </TouchableOpacity>
             </View>
-
             <FlatList
                 data={Object.values(shifts)}
                 renderItem={renderShift}
@@ -144,72 +131,14 @@ const ShiftsScreen = () => {
                     ) : null
                 }
             />
-
-            {/* ADD/EDIT ALARM MODAL */}
-            {currentAlarm && (
-                <Modal
-                    animationType="fade"
-                    transparent={true}
-                    visible={isAlarmModalVisible}
-                    onRequestClose={() => setAlarmModalVisible(false)}
-                >
-                    <View style={styles.centeredView}>
-                        <View style={styles.modalView}>
-                            <Text style={styles.modalTitle}>{currentAlarm.alarm.id ? 'Editar Alarma' : 'Añadir Alarma'}</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Etiqueta (ej. Despertar)"
-                                placeholderTextColor="#999"
-                                value={currentAlarm.alarm.label}
-                                onChangeText={(text) => setCurrentAlarm(prev => prev ? ({ ...prev, alarm: { ...prev.alarm, label: text }}) : null)}
-                            />
-                            
-                            <View style={styles.timePickerContainer}>
-                                <Picker 
-                                    dataSource={hours}
-                                    selectedIndex={selectedHour}
-                                    onValueChange={(data: string, index: number) => setSelectedHour(index)}
-                                    wrapperHeight={150}
-                                    itemHeight={50}
-                                    highlightColor="#d8d8d8"
-                                />
-                                <Text style={styles.timePickerSeparator}>:</Text>
-                                <Picker 
-                                    dataSource={minutes}
-                                    selectedIndex={selectedMinute}
-                                    onValueChange={(data: string, index: number) => setSelectedMinute(index)}
-                                    wrapperHeight={150}
-                                    itemHeight={50}
-                                    highlightColor="#d8d8d8"
-                                />
-                                <Picker 
-                                    dataSource={ampm}
-                                    selectedIndex={selectedAmPm}
-                                    onValueChange={(data: string, index: number) => setSelectedAmPm(index)}
-                                    wrapperHeight={150}
-                                    itemHeight={50}
-                                    highlightColor="#d8d8d8"
-                                />
-                            </View>
-
-                            <View style={styles.modalButtonContainer}>
-                                {currentAlarm.alarm.id && ( // Show delete button only when editing
-                                    <Pressable style={[styles.modalButton, styles.buttonDelete]} onPress={handleDeleteAlarm}>
-                                        <Text style={styles.buttonText}>Eliminar</Text>
-                                    </Pressable>
-                                )}
-                                <Pressable style={[styles.modalButton, styles.buttonClose]} onPress={() => setAlarmModalVisible(false)}>
-                                    <Text style={styles.buttonText}>Cancelar</Text>
-                                </Pressable>
-                                <Pressable style={[styles.modalButton, styles.buttonSave]} onPress={handleSaveAlarm}>
-                                    <Text style={styles.buttonText}>Guardar</Text>
-                                </Pressable>
-                            </View>
-                        </View>
-                    </View>
-                </Modal>
-            )}
-
+            {/* Now using the reusable AlarmModal component */}
+            <AlarmModal
+              isVisible={isAlarmModalVisible}
+              onClose={() => setAlarmModalVisible(false)}
+              onSave={handleSaveAlarm}
+              onDelete={handleDeleteAlarm}
+              initialAlarm={currentAlarm}
+            />
             {/* ADD SHIFT MODAL */}
             <Modal
                 animationType="fade"
@@ -242,7 +171,6 @@ const ShiftsScreen = () => {
     );
 };
 
-// --- STYLES ---
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#E8F0F2' },
     header: { paddingVertical: 10, paddingHorizontal: 20, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#ddd', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -263,7 +191,6 @@ const styles = StyleSheet.create({
     addAlarmButtonText: { color: '#4A90E2', fontWeight: 'bold', fontSize: 16 },
     addShiftButton: { backgroundColor: '#2ECC71', borderRadius: 10, padding: 15, margin: 10, alignItems: 'center', elevation: 3 },
     addShiftButtonText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
-    // Modal Styles
     centeredView: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
     modalView: { width: '90%', backgroundColor: 'white', borderRadius: 20, padding: 25, alignItems: 'center', elevation: 5 },
     modalTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 20 },
@@ -272,9 +199,8 @@ const styles = StyleSheet.create({
     modalButton: { borderRadius: 10, padding: 15, elevation: 2, marginLeft: 10 },
     buttonClose: { backgroundColor: '#aaa' },
     buttonSave: { backgroundColor: '#4A90E2' },
-    buttonDelete: { backgroundColor: '#E74C3C', marginRight: 'auto' }, // Added style for delete button
-    buttonText: { color: 'white', fontWeight: 'bold', textAlign: 'center' },
-    // Time Picker Styles
+    buttonDelete: { backgroundColor: '#E74C3C', marginRight: 'auto' },
+    buttonText: { color: 'white', fontWeight: 'bold', textAlign: 'center', fontSize: 16 },
     timePickerContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', width: '100%', marginVertical: 10 },
     timePickerSeparator: { fontSize: 24, fontWeight: 'bold' },
     noAlarmsText: { textAlign: 'center', color: '#999', padding: 10 },
